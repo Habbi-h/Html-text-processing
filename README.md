@@ -1,14 +1,5 @@
 # Html-text-processing
 Fetching and parsing financial reports on Edgar
----
-title: "Text parsing and data preparation"
-output:
-  pdf_document: default
-  html_notebook: default
-editor_options:
-  chunk_output_type: console
----
-
 
 ```{r libraries, warning=FALSE, message=FALSE}
 library(edgar)
