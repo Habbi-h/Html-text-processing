@@ -1,0 +1,39 @@
+# Customise stop-word list
+
+The DateandTime as well as Geographic files are context-specific stopword lists obtained via the University of Notre Dame website. (https://sraf.nd.edu/textual-analysis/resources/#StopWords)
+```{r stopword, eval=FALSE}
+# Getting company names
+company_name <- company_all_text %>%
+  select(Security) %>%
+  unique(.) %>%
+  mutate(full_name = gsub("[[:punct:]]+", " ", Security)) %>%
+  select(-Security)
+
+company_name <- company_name %>%
+  unnest_tokens(word, full_name) %>%
+  mutate(lexicon = "CUSTOM")
+
+# Geographic stopwords
+geographic_stopword <- as.data.frame(readLines("StopWords_Geographic.txt")) %>%
+  setNames("word") %>%
+  mutate(lexicon = "CUSTOM")
+
+# Date and time stopwords
+datetime_stopword <- as.data.frame(readLines("StopWords_DatesandNumbers.txt")) %>%
+  setNames("word") %>%
+  mutate(lexicon = "CUSTOM")
+
+# Other words that are highly repeated in 10-k and 10-q forms
+other_stopword <- data.frame(word = c("company", "companys", "consolidated", "financial",
+                                      "finance", "percent", "fiscal", "statement", 
+                                      "chapter", "item", "part", "section", "contents",
+                                      "segment", "note", "accounting", "statements",
+                                      "condensed", "gaap", "nongaap", "pension"),
+                             lexicon = "CUSTOM")
+
+# Combine with current tidytext stop_words dataframe
+stop_words_n <- tidytext::stop_words %>% rbind(company_name, other_stopword,
+                                               geographic_stopword, datetime_stopword)
+
+# save(stop_words_n, file = "stop_word_n.rda")
+```
