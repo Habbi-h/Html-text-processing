@@ -1,0 +1,128 @@
+# Text parsing
+
+The parsing process will be conducted with txt files directly instead of html files as this would reduce the downloading time (the getFilingsHTML function will download text files then parse to html format, doubling the processing time as well as storing spaces). This approach was introduced by Hering, 2016.
+(Hering, J., 2016. The annual report algorithm: Retrieval of financial statements and extraction of textual information. Available at SSRN 2870309.)
+```{r function}
+# As there is no ready function to extract text from 10-Q form, the following function
+# is defined to break down and remove mark up html language.
+text_10k_clean <- function(x) {
+  readLines(x) %>%
+  str_c(collapse = " ") %>% # Step 1
+  str_extract(pattern = "(?s)(?m)<TYPE>10-K.*?(</TEXT>)") %>% # Step 2
+  str_replace(pattern = "((?i)<TYPE>).*?(?=<)", replacement = "") %>% # Step 3
+  str_replace(pattern = "((?i)<SEQUENCE>).*?(?=<)", replacement = "") %>% 
+  str_replace(pattern = "((?i)<FILENAME>).*?(?=<)", replacement = "") %>% 
+  str_replace(pattern = "((?i)<DESCRIPTION>).*?(?=<)", replacement = "") %>%
+  str_replace(pattern = "(?s)<HEAD>.*?</HEAD>", replacement = "") %>% # Step 4
+  str_replace_all(pattern = "(?s)<[^>]*>", replacement = " ") %>% # Step 5
+  str_replace_all(pattern = "&(.{2,6});", replacement = " ") %>% # Step 6
+  str_replace_all(pattern = "(?s) +", replacement = " ") # Step 7
+}
+
+text_10q_clean <- function(x) {
+  readLines(x) %>%
+  str_c(collapse = " ") %>% # Step 1
+  str_extract(pattern = "(?s)(?m)<TYPE>10-Q.*?(</TEXT>)") %>% # Step 2
+  str_replace(pattern = "((?i)<TYPE>).*?(?=<)", replacement = "") %>% # Step 3
+  str_replace(pattern = "((?i)<SEQUENCE>).*?(?=<)", replacement = "") %>% 
+  str_replace(pattern = "((?i)<FILENAME>).*?(?=<)", replacement = "") %>%
+  str_replace(pattern = "((?i)<DESCRIPTION>).*?(?=<)", replacement = "") %>%
+  str_replace(pattern = "(?s)<HEAD>.*?</HEAD>", replacement = "") %>% # Step 4
+  str_replace_all(pattern = "(?s)<[^>]*>", replacement = " ") %>% # Step 5
+  str_replace_all(pattern = "&(.{2,6});", replacement = " ") %>% # Step 6
+  str_replace_all(pattern = "(?s) +", replacement = " ") # Step 7
+}
+```
+Step 1: readLines() will read the text file line by line then the str_c() function will combine all string vectors into one-element vector.
+Step 2: The str_extract() function takes in the one-element vector of text, and returns only the text corresponding to the beginning and end of the document, specified by 10-K and 10-Q, respectively.
+Step 3: These steps will delete the elements that are used to format the document, including document type, sequence information, file name and description, as they are not relevant data.
+Step 4: Removal of head section (including document title).
+Step 5: Removal of HTML tags and attributes.
+Step 6: Replacement of UNICODE strings with spaces.
+Step 7: Replacement of multiple spaces with one single space.
+
+```{r parsing10K, eval=FALSE}
+
+list_10k <- list.files(path = "Edgar filings_full text/Form 10-K/",
+                       full.names = TRUE, recursive = TRUE)
+
+for (l in 1:length(list_10k)) {
+  this_file_text <- text_10k_clean(list_10k[l])
+  # Remove digits as well as punctuations
+  this_file_text_clean <- gsub("[^a-zA-Z ]", "", this_file_text) %>%
+    iconv(from = 'UTF-8', to = 'ASCII//TRANSLIT') %>%
+    tolower() %>%
+    stripWhitespace()
+  # Keep file name
+  file <- basename(list_10k[l])
+  
+  text_file <- data.frame(this_file_text_clean, file)
+ # Separate file name to identifiers
+  text_file <- text_file %>% separate(file, c("CIK", "form_type", "date_filed", "doc_id"),
+                                      sep = "_", remove = FALSE)
+  print(l)
+  dbWriteTable(conn, name = "edgars_full_text", value = text_file, append = TRUE)
+}
+```
+
+```{r parsing10q, eval=FALSE}
+# Listing 10-Q files
+list_10q <- list.files(path = "Edgar filings_full text/Form 10-Q/",
+                       full.names = TRUE, recursive = TRUE)
+# Looping through 10q files
+for (m in 1:length(list_10q)) {
+  this_file_text <- text_10q_clean(list_10q[m])
+  # Remove digits as well as punctuations
+  this_file_text_clean <- gsub("[^a-zA-Z ]", "", this_file_text) %>%
+    iconv(from = 'UTF-8', to = 'ASCII//TRANSLIT') %>%
+    tolower() %>%
+    stripWhitespace()
+  # Keep file name
+  file <- basename(list_10q[m])
+  
+  text_file <- data.frame(this_file_text_clean, file)
+  # Separate file name to identifiers
+  text_file <- text_file %>% separate(file, c("CIK", "form_type", "date_filed", "doc_id"),
+                                      sep = "_", remove = FALSE)
+  print(m)
+  dbWriteTable(conn, name = "edgars_full_text", value = text_file, append = TRUE)
+}
+# write(this_file_text_clean, file = "cleaned_example.txt")
+```
+
+Now as all the processed text are saved in the database, this will be reserved as backup for all analysis. An example of the processed text is included in the submission file.
+```{r fetch_text, eval=FALSE}
+# Fetching all text 
+company_all_text <- dbGetQuery(conn, "SELECT * FROM edgars_full_text")
+company_all_text$CIK <- as.numeric(company_all_text$CIK)
+company_all_text$date_filed <- ymd(company_all_text$date_filed)
+
+# Joining with company list
+company_all_text <- company_all_text %>%
+  left_join(company_full_list, by = "CIK")
+
+# Saving the final file in rda format
+save(company_all_text, file = "company_all_text.rda")
+```
+
+company_stock_price <- data.frame()
+
+# Getting stock prices nrow(company_all_text)
+for (s in 1:nrow(company_all_text)) {
+  # Setting up timeframe 
+  this_stock <- company_all_text$Y_symbol[s]
+  left_bound <- company_all_text$date_filed[s] - 7
+  right_bound <- company_all_text$date_filed[s] + 7
+  # Downloading stock prices
+  this_stock_price <- BatchGetSymbols(this_stock, first.date = left_bound,
+                                      last.date = right_bound, be.quiet = TRUE)
+  
+  # Binding all stocks to one dataframe
+  company_stock_price <- bind_rows(company_stock_price, this_stock_price)
+}
+company_stock_price <- company_stock_price %>%
+  select(ticker, price.open:ret.closing.prices) %>%
+  na.omit()
+
+save(company_stock_price, file = "company_stock_price.rda")
+```
