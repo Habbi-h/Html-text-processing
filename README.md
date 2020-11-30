@@ -1,5 +1,6 @@
-This project aims to use R programming to fetch and clean HTML files.
-The following packages are used:
+#This project aims to use R programming to fetch and clean HTML files. The following packages are used:
+
+```
 library(edgar)
 library(readtext)
 library(docxtractr)
@@ -12,3 +13,4 @@ library(stringr)
 library(RSQLite)
 library(tm)
 library(BatchGetSymbols)
+```
