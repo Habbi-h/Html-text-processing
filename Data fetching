@@ -1,0 +1,49 @@
+# Html-text-processing
+Fetching and parsing financial reports on Edgar
+
+```{r libraries, warning=FALSE, message=FALSE}
+library(edgar)
+library(readtext)
+library(docxtractr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(data.table)
+library(XML)
+library(stringr)
+library(tm)
+library(BatchGetSymbols)
+```
+
+# Data preparation
+The list of companies included in the S&P 500 was provided in the word document of individual assignment description.
+```{r listSP500, eval=FALSE}
+# Extract table from docx 
+dat_word_tbl <- docx_extract_tbl(read_docx("individual_assignment_companies.docx"))
+dat_word_tbl$GICS.Sector <- as.factor(dat_word_tbl$GICS.Sector)
+
+# Reformat CIK column as factor
+dat_word_tbl$CIK <- as.numeric(dat_word_tbl$CIK)
+# Replace dot with dash as stock symbols on Yahoo Finance do not include dots
+dat_word_tbl$Y_symbol <- gsub("\\.", "-", dat_word_tbl$Symbol)
+dat_word_tbl <- dat_word_tbl %>%
+  plyr::rename(c("GICS.Sector" = "GICS_sector",
+                 "GICS.Sub.Industry" = "GICS_sub_industry"))
+
+# Save as rda file
+save(dat_word_tbl, file = "company_full_list.rda")
+```
+
+Using edgar package, the loop function will download filings for companies in SP500 list. Here I choose to work with a smaller sample including 3 industry sectors: Industrials, Health Care, and Information Technology due to free disk space limitation. This sample comprises 201 companies, which is a half of the original full list. The total downloaded filings are 6,432 files.
+```{r gettext, eval=FALSE}
+# Working on a smaller sample due to free disk space limitation
+company_set <- dat_word_tbl %>%
+  filter(GICS.Sector %in% c("Industrials", "Health Care", "Information Technology"))
+
+for (i in 1:nrow(company_set)) {
+  this_cik <- company_set$CIK[i]
+  getFilings(this_cik, form.type = c("10-K", "10-Q"),
+                 2009:2019, quarter = c(1,2,3), downl.permit = "y")
+  print(i)
+}
+```
